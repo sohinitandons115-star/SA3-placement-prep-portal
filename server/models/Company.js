@@ -1,36 +1,47 @@
 import { getDB } from '../config/db.js';
 
 const columns = `
-  id AS _id,
-  user_id AS userId,
+  id AS "_id",
+  user_id AS "userId",
   name,
   role,
-  applied_date AS appliedDate,
+  applied_date AS "appliedDate",
   status,
-  created_at AS createdAt,
-  updated_at AS updatedAt
+  created_at AS "createdAt",
+  updated_at AS "updatedAt"
 `;
 
+const mapCompany = (row) => (
+  row && {
+    ...row,
+    _id: Number(row._id),
+    userId: Number(row.userId),
+  }
+);
+
 class Company {
-  static findByUserId(userId) {
-    return getDB().prepare(`
-      SELECT ${columns} FROM companies WHERE user_id = ? ORDER BY applied_date DESC
-    `).all(userId);
+  static async findByUserId(userId) {
+    const { rows } = await getDB().query(`
+      SELECT ${columns} FROM companies WHERE user_id = $1 ORDER BY applied_date DESC
+    `, [userId]);
+    return rows.map(mapCompany);
   }
 
-  static findById(id) {
-    return getDB().prepare(`SELECT ${columns} FROM companies WHERE id = ?`).get(id);
+  static async findById(id) {
+    const { rows } = await getDB().query(`SELECT ${columns} FROM companies WHERE id = $1`, [id]);
+    return mapCompany(rows[0]);
   }
 
-  static create({ userId, name, role, status, appliedDate }) {
-    const result = getDB().prepare(`
+  static async create({ userId, name, role, status, appliedDate }) {
+    const { rows } = await getDB().query(`
       INSERT INTO companies (user_id, name, role, status, applied_date)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(userId, name.trim(), role.trim(), status || 'Applied', new Date(appliedDate).toISOString());
-    return this.findById(result.lastInsertRowid);
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING ${columns}
+    `, [userId, name.trim(), role.trim(), status || 'Applied', appliedDate || new Date()]);
+    return mapCompany(rows[0]);
   }
 
-  static update(id, updates) {
+  static async update(id, updates) {
     const allowedFields = {
       name: 'name',
       role: 'role',
@@ -42,17 +53,23 @@ class Company {
 
     if (entries.length === 0) return this.findById(id);
 
-    const assignments = entries.map(([key]) => `${allowedFields[key]} = ?`);
-    const values = entries.map(([key, value]) => (
-      key === 'appliedDate' ? new Date(value).toISOString() : value
-    ));
-    assignments.push('updated_at = CURRENT_TIMESTAMP');
-    getDB().prepare(`UPDATE companies SET ${assignments.join(', ')} WHERE id = ?`).run(...values, id);
-    return this.findById(id);
+    const values = entries.map(([, value]) => value);
+    const assignments = entries.map(([key], index) => `${allowedFields[key]} = $${index + 1}`);
+    values.push(id);
+    assignments.push(`updated_at = NOW()`);
+
+    const { rows } = await getDB().query(`
+      UPDATE companies
+      SET ${assignments.join(', ')}
+      WHERE id = $${values.length}
+      RETURNING ${columns}
+    `, values);
+    return mapCompany(rows[0]);
   }
 
-  static delete(id) {
-    return getDB().prepare('DELETE FROM companies WHERE id = ?').run(id).changes > 0;
+  static async delete(id) {
+    const result = await getDB().query('DELETE FROM companies WHERE id = $1', [id]);
+    return result.rowCount > 0;
   }
 }
 

@@ -10,15 +10,15 @@
 ## 1. Architecture Overview
 
 ```
-┌──────────────────┐     HTTPS / REST      ┌──────────────────┐   better-sqlite3    ┌─────────────┐
-│  React (Vite)    │ ───────────────────▶  │  Express.js API  │ ─────────────────▶ │   SQLite    │
-│  Frontend (SPA)  │ ◀───────────────────  │  (Node.js)       │ ◀───────────────── │  DB file    │
+┌──────────────────┐     HTTPS / REST      ┌──────────────────┐       pg           ┌─────────────┐
+│  React (Vite)    │ ───────────────────▶  │  Express.js API  │ ─────────────────▶ │ PostgreSQL  │
+│  Frontend (SPA)  │ ◀───────────────────  │  (Node.js)       │ ◀───────────────── │   (Neon)    │
 └──────────────────┘    JSON + JWT          └──────────────────┘                     └─────────────┘
 ```
 
 - **Frontend** — React SPA (Vite), Tailwind CSS, Axios, client-side routing
-- **Backend** — Express.js REST API, JWT stateless auth, SQLite access through `better-sqlite3`
-- **Database** — SQLite file with `users`, `companies`, and `resources` tables
+- **Backend** — Express.js REST API, JWT stateless auth, PostgreSQL access through `pg`
+- **Database** — Hosted PostgreSQL with `users`, `companies`, and `resources` tables
 
 ### Architectural Decisions
 
@@ -26,8 +26,8 @@
 |---|---|
 | REST over GraphQL | Simpler and faster to implement; higher team familiarity |
 | JWT over session cookies | Stateless auth — no server-side session store required |
-| SQLite over MongoDB | Embedded database with no network connection or database service required for local development |
-| Persistent disk for deployed SQLite | The database file must be stored on durable storage; serverless temporary filesystems are not suitable |
+| PostgreSQL over SQLite | A hosted database keeps data durable while allowing the API to run on a free service with an ephemeral filesystem |
+| Neon PostgreSQL | Managed PostgreSQL accessed over TLS using `DATABASE_URL` |
 | Client-side search/filter | Dataset per user is small; avoids extra API round-trips |
 | Context API over Redux | Sufficient for auth/theme state; avoids Redux boilerplate |
 | No file storage (S3) | Resume upload is a bonus feature; adds infra overhead not justified by time |
@@ -44,8 +44,8 @@
 | Routing | React Router v6 | Standard client-side routing with protected route support |
 | HTTP client | Axios | Interceptor support for automatic JWT attachment |
 | Backend | Express.js | Minimal, well-understood REST framework |
-| Database | SQLite | Embedded, transactional relational database stored in a local file |
-| SQLite driver | `better-sqlite3` | Synchronous prepared statements and local SQLite database access |
+| Database | PostgreSQL (Neon) | Hosted relational database, independent of the API service filesystem |
+| PostgreSQL driver | `pg` | PostgreSQL connection pooling and parameterized queries |
 | Auth | `jsonwebtoken` | Stateless, no session store required |
 | Password hashing | `bcryptjs` | Industry-standard one-way hashing |
 | Input validation | `express-validator` | Declarative request validation |
@@ -67,11 +67,11 @@ SA3-placement-prep-portal/
 │   │   └── hooks/          # Custom hooks
 │   └── .env                # VITE_API_URL
 ├── server/                 # Express backend
-│   ├── models/             # SQLite-backed User, Company, Resource access
+│   ├── models/             # PostgreSQL-backed User, Company, Resource access
 │   ├── routes/             # auth, company, resource route files
 │   ├── controllers/        # Business logic per route group
 │   ├── middleware/         # Auth middleware, error handling
-│   ├── config/             # db.js (SQLite connection and schema initialization)
+│   ├── config/             # db.js (PostgreSQL pool and schema initialization)
 │   └── test/               # Database and API integration tests
 ├── README.md
 ├── PRD.md
@@ -86,13 +86,13 @@ SA3-placement-prep-portal/
 
 | Field | Type | Constraints |
 |---|---|---|
-| `id` (`_id` in API) | INTEGER | Primary key, auto-increment |
+| `id` (`_id` in API) | BIGINT | Primary key, auto-increment |
 | `name` | String | Required |
 | `email` | TEXT | Required, unique, case-insensitive |
 | `password_hash` | TEXT | Required (bcrypt hash — never plain text) |
-| `coding_belts` | TEXT (JSON) | Language belt scores |
+| `coding_belts` | JSONB | Language belt scores |
 | `communication_score` | REAL | Defaults to `0` |
-| `attendance` | TEXT (JSON) | Quarterly and yearly percentages |
+| `attendance` | JSONB | Quarterly and yearly percentages |
 | `viva_score` | REAL | Defaults to `0` |
 | `created_at` / `updated_at` | TEXT | Auto timestamps |
 
@@ -100,8 +100,8 @@ SA3-placement-prep-portal/
 
 | Field | Type | Constraints |
 |---|---|---|
-| `id` (`_id` in API) | INTEGER | Primary key, auto-increment |
-| `user_id` (`userId` in API) | INTEGER → `users.id` | Required foreign key; cascades on user deletion |
+| `id` (`_id` in API) | BIGINT | Primary key, auto-increment |
+| `user_id` (`userId` in API) | BIGINT → `users.id` | Required foreign key; cascades on user deletion |
 | `name` | TEXT | Required |
 | `role` | TEXT | Required |
 | `applied_date` (`appliedDate` in API) | TEXT | Required ISO date |
@@ -112,7 +112,7 @@ SA3-placement-prep-portal/
 
 | Field | Type | Constraints |
 |---|---|---|
-| `id` (`_id` in API) | INTEGER | Primary key, auto-increment |
+| `id` (`_id` in API) | BIGINT | Primary key, auto-increment |
 | `title` | TEXT | Required |
 | `category` | TEXT (enum) | `DSA`, `Aptitude`, `Resume`, `Interview Experience`, `Core Subjects` |
 | `link` | TEXT | Required |
@@ -197,7 +197,7 @@ Base URL: `/api`
 | Variable | Location | Purpose |
 |---|---|---|
 | `PORT` | server | Express server port |
-| `DB_PATH` | server | SQLite database file path (defaults to `server/data/placement.sqlite`) |
+| `DATABASE_URL` | server | PostgreSQL connection string, including SSL settings |
 | `JWT_SECRET` | server | JWT signing secret |
 | `CLIENT_ORIGIN` | server | Allowed frontend origin(s), comma-separated |
 | `VITE_API_URL` | client | Backend API base URL |

@@ -5,12 +5,12 @@ const mapUser = (row, includePasswordHash = false) => {
   if (!row) return null;
 
   const user = {
-    _id: row.id,
+    _id: Number(row.id),
     name: row.name,
     email: row.email,
-    codingBelts: JSON.parse(row.coding_belts),
+    codingBelts: row.coding_belts,
     communicationScore: row.communication_score,
-    attendance: JSON.parse(row.attendance),
+    attendance: row.attendance,
     vivaScore: row.viva_score,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -20,26 +20,27 @@ const mapUser = (row, includePasswordHash = false) => {
 };
 
 class User {
-  static findById(id) {
-    const row = getDB().prepare('SELECT * FROM users WHERE id = ?').get(id);
-    return mapUser(row);
+  static async findById(id) {
+    const { rows } = await getDB().query('SELECT * FROM users WHERE id = $1', [id]);
+    return mapUser(rows[0]);
   }
 
-  static findByEmail(email) {
-    const row = getDB().prepare('SELECT * FROM users WHERE email = ?').get(email);
-    return mapUser(row, true);
+  static async findByEmail(email) {
+    const { rows } = await getDB().query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]);
+    return mapUser(rows[0], true);
   }
 
-  static create({ name, email, passwordHash }) {
-    const result = getDB().prepare(`
+  static async create({ name, email, passwordHash }) {
+    const { rows } = await getDB().query(`
       INSERT INTO users (name, email, password_hash)
-      VALUES (?, ?, ?)
-    `).run(name.trim(), email.trim(), passwordHash);
-    return this.findById(result.lastInsertRowid);
+      VALUES ($1, $2, $3)
+      RETURNING *
+    `, [name.trim(), email.trim().toLowerCase(), passwordHash]);
+    return mapUser(rows[0]);
   }
 
-  static updateProfile(id, updates) {
-    const user = this.findById(id);
+  static async updateProfile(id, updates) {
+    const user = await this.findById(id);
     if (!user) return null;
 
     const codingBelts = { ...user.codingBelts, ...updates.codingBelts };
@@ -47,13 +48,14 @@ class User {
     const communicationScore = updates.communicationScore ?? user.communicationScore;
     const vivaScore = updates.vivaScore ?? user.vivaScore;
 
-    getDB().prepare(`
+    const { rows } = await getDB().query(`
       UPDATE users
-      SET coding_belts = ?, attendance = ?, communication_score = ?, viva_score = ?,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(JSON.stringify(codingBelts), JSON.stringify(attendance), communicationScore, vivaScore, id);
-    return this.findById(id);
+      SET coding_belts = $1, attendance = $2, communication_score = $3,
+          viva_score = $4, updated_at = NOW()
+      WHERE id = $5
+      RETURNING *
+    `, [codingBelts, attendance, communicationScore, vivaScore, id]);
+    return mapUser(rows[0]);
   }
 
   static async matchPassword(user, enteredPassword) {

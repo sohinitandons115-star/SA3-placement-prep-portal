@@ -11,10 +11,10 @@ router.put('/profile', protect, async (req, res) => {
   const { codingBelts, communicationScore, attendance, vivaScore } = req.body;
 
   try {
-    const user = User.findById(req.user._id);
+    const user = await User.findById(req.user._id);
 
     if (user) {
-      const updatedUser = User.updateProfile(req.user._id, {
+      const updatedUser = await User.updateProfile(req.user._id, {
         codingBelts,
         communicationScore,
         attendance,
@@ -44,7 +44,7 @@ router.put('/profile', protect, async (req, res) => {
 // @access  Private
 router.get('/profile', protect, async (req, res) => {
   try {
-    const user = User.findById(req.user._id);
+    const user = await User.findById(req.user._id);
     if (user) {
       res.json(user);
     } else {

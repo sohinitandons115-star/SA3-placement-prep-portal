@@ -32,7 +32,7 @@ router.post(
     const { name, email, password } = req.body;
 
     try {
-      let user = User.findByEmail(email);
+      let user = await User.findByEmail(email);
 
       if (user) {
         return res.status(400).json({ errors: [{ msg: 'User already exists' }] });
@@ -41,7 +41,7 @@ router.post(
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(password, salt);
 
-      user = User.create({
+      user = await User.create({
         name,
         email: email.trim(),
         passwordHash,
@@ -81,7 +81,7 @@ router.post(
     const { email, password } = req.body;
 
     try {
-      const user = User.findByEmail(email);
+      const user = await User.findByEmail(email);
 
       if (!user) {
         return res.status(400).json({ errors: [{ msg: 'Invalid Credentials' }] });
@@ -100,6 +100,9 @@ router.post(
         token: generateToken(user._id),
       });
     } catch (err) {
+      if (err.code === '23505') {
+        return res.status(400).json({ errors: [{ msg: 'User already exists' }] });
+      }
       console.error(err.message);
       res.status(500).send('Server error');
     }

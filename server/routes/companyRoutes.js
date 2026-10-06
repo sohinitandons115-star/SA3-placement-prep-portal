@@ -10,7 +10,7 @@ const router = express.Router();
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const companies = Company.findByUserId(req.user._id);
+    const companies = await Company.findByUserId(req.user._id);
     res.json(companies);
   } catch (err) {
     console.error(err.message);
@@ -39,7 +39,7 @@ router.post(
     const { name, role, status, appliedDate } = req.body;
 
     try {
-      const company = Company.create({
+      const company = await Company.create({
         name,
         role,
         status,
@@ -68,7 +68,7 @@ router.put('/:id', protect, async (req, res) => {
   if (appliedDate) companyFields.appliedDate = appliedDate;
 
   try {
-    let company = Company.findById(req.params.id);
+    let company = await Company.findById(req.params.id);
 
     if (!company) return res.status(404).json({ msg: 'Company not found' });
 
@@ -77,7 +77,7 @@ router.put('/:id', protect, async (req, res) => {
       return res.status(401).json({ msg: 'Not authorized' });
     }
 
-    company = Company.update(req.params.id, companyFields);
+    company = await Company.update(req.params.id, companyFields);
 
     res.json(company);
   } catch (err) {
@@ -91,7 +91,7 @@ router.put('/:id', protect, async (req, res) => {
 // @access  Private
 router.delete('/:id', protect, async (req, res) => {
   try {
-    const company = Company.findById(req.params.id);
+    const company = await Company.findById(req.params.id);
 
     if (!company) return res.status(404).json({ msg: 'Company not found' });
 
@@ -100,7 +100,7 @@ router.delete('/:id', protect, async (req, res) => {
       return res.status(401).json({ msg: 'Not authorized' });
     }
 
-    Company.delete(req.params.id);
+    await Company.delete(req.params.id);
 
     res.json({ msg: 'Company removed' });
   } catch (err) {

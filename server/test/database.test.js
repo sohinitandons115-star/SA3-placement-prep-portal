@@ -2,10 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 
-process.env.DB_PATH = ':memory:';
 process.env.JWT_SECRET = 'test-only-secret';
 
-const { default: connectDB } = await import('../config/db.js');
+const { initializeSchema, setPoolForTests } = await import('../config/db.js');
 const { default: User } = await import('../models/User.js');
 const { default: Company } = await import('../models/Company.js');
 const { default: Resource } = await import('../models/Resource.js');
@@ -13,18 +12,23 @@ const { default: authRoutes } = await import('../routes/authRoutes.js');
 const { default: companyRoutes } = await import('../routes/companyRoutes.js');
 const { default: resourceRoutes } = await import('../routes/resourceRoutes.js');
 const { default: userRoutes } = await import('../routes/userRoutes.js');
+const { newDb } = await import('pg-mem');
 
-connectDB();
+const testDatabase = newDb();
+const { Pool: TestPool } = testDatabase.adapters.createPg();
+const testPool = new TestPool();
+setPoolForTests(testPool);
+await initializeSchema();
 
-test('SQLite persists users, profile metrics, company ownership, and resources', () => {
-  const user = User.create({
+test('PostgreSQL persists users, profile metrics, company ownership, and resources', async () => {
+  const user = await User.create({
     name: 'Test Student',
     email: 'student@example.com',
     passwordHash: 'hashed-password',
   });
 
-  assert.equal(User.findByEmail('STUDENT@example.com')._id, user._id);
-  const updatedUser = User.updateProfile(user._id, {
+  assert.equal((await User.findByEmail('STUDENT@example.com'))._id, user._id);
+  const updatedUser = await User.updateProfile(user._id, {
     codingBelts: { java: 3 },
     attendance: { yearly: 92 },
     communicationScore: 8.5,
@@ -38,28 +42,28 @@ test('SQLite persists users, profile metrics, company ownership, and resources',
   assert.deepEqual(updatedUser.attendance, { quarterly: 0, yearly: 92 });
   assert.equal(updatedUser.communicationScore, 8.5);
 
-  const company = Company.create({
+  const company = await Company.create({
     userId: user._id,
     name: 'Example Corp',
     role: 'Engineer',
     status: 'Applied',
     appliedDate: new Date('2026-01-01T00:00:00.000Z'),
   });
-  assert.equal(Company.findByUserId(user._id)[0]._id, company._id);
-  assert.deepEqual(Company.findByUserId(-1), []);
-  assert.equal(Company.update(company._id, { status: 'Selected' }).status, 'Selected');
-  assert.equal(Company.delete(company._id), true);
+  assert.equal((await Company.findByUserId(user._id))[0]._id, company._id);
+  assert.deepEqual(await Company.findByUserId(-1), []);
+  assert.equal((await Company.update(company._id, { status: 'Selected' })).status, 'Selected');
+  assert.equal(await Company.delete(company._id), true);
 
-  const resource = Resource.create({
+  const resource = await Resource.create({
     title: 'Algorithms',
     category: 'DSA',
     link: 'https://example.com',
   });
-  assert.equal(Resource.findAll()[0]._id, resource._id);
-  assert.equal(Resource.delete(resource._id), true);
+  assert.equal((await Resource.findAll())[0]._id, resource._id);
+  assert.equal(await Resource.delete(resource._id), true);
 });
 
-test('API registers a user and serves authenticated SQLite-backed requests', async (t) => {
+test('API registers a user and serves authenticated PostgreSQL-backed requests', async (t) => {
   const app = express();
   app.use(express.json());
   app.use('/api/auth', authRoutes);

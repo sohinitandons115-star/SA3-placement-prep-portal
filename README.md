@@ -2,11 +2,28 @@
 
 A student dashboard to track placement applications, view preparation resources, and record eligibility metrics.
 
-**Stack:** React (Vite), Express, SQLite, JWT
+**Stack:** React (Vite), Express, PostgreSQL (Neon), JWT
 
 ## Run locally
 
-Prerequisites: Node.js 20 or later and npm.
+Prerequisites: Node.js 20 or later, npm, and a free PostgreSQL database from Neon (or another PostgreSQL provider).
+
+Create a Neon project and use its free option if available for your account. In the Neon Console, click **Connect**, keep **Connection pooling** enabled, select the branch, database, and role, then copy the connection string. Keep it private; the string contains your database password.
+
+Create `server/.env` before starting the backend:
+
+**`server/.env`**
+```env
+PORT=5000
+JWT_SECRET=replace_with_a_long_random_secret
+DATABASE_URL=your_private_neon_postgresql_connection_string
+CLIENT_ORIGIN=http://localhost:5173
+```
+
+**`client/.env`**
+```env
+VITE_API_URL=http://localhost:5000/api
+```
 
 ```powershell
 git clone https://github.com/sohinitandons115-star/SA3-placement-prep-portal.git
@@ -26,28 +43,11 @@ npm run dev
 
 Open the Vite URL shown in the terminal (usually `http://localhost:5173`). The backend runs at `http://localhost:5000`; its health check is `/api/health`.
 
-The backend creates `server/data/placement.sqlite` automatically. Set `DB_PATH` to use another file path. The database file is ignored by Git and stays on the computer or server that stores it.
-
-Optional local environment:
-
-**`server/.env`**
-```env
-PORT=5000
-JWT_SECRET=replace_with_a_long_random_secret
-DB_PATH=./data/placement.sqlite
-CLIENT_ORIGIN=http://localhost:5173
-```
-
-**`client/.env`**
-```env
-VITE_API_URL=http://localhost:5000/api
-```
-
 `VITE_API_URL` must include `/api`. The client defaults to the local API URL when the variable is not set.
 
 ## Deploy
 
-Deploy the React client on Vercel and the Express API on Render. Do not host the SQLite database file on Vercel: serverless function filesystems are temporary and can lose database writes.
+Deploy the React client on Vercel, the Express API on Render, and use Neon for the hosted PostgreSQL database. Render's free service filesystem is temporary, but the database is hosted separately on Neon.
 
 ### 1. Push the project to GitHub
 
@@ -59,13 +59,12 @@ Commit and push your changes to the GitHub repository/branch you want to deploy.
 2. Set **Root Directory** to `server`.
 3. Set **Build Command** to `npm install`.
 4. Set **Start Command** to `npm start`.
-5. Add a persistent disk mounted at `/var/data`. A durable SQLite database requires persistent storage; confirm the disk and service pricing in Render before creating it.
-6. Add these environment variables in the Render service settings:
-   - `DB_PATH` = `/var/data/placement.sqlite`
+5. Add these environment variables in the Render service settings:
+   - `DATABASE_URL` = the pooled PostgreSQL connection string copied from Neon
    - `JWT_SECRET` = a long random secret
-   - `CLIENT_ORIGIN` = your Vercel site URL (for example, `https://your-project.vercel.app`)
+   - `CLIENT_ORIGIN` = your Vercel site URL (for example, `https://your-project.vercel.app`; add this after deploying the frontend)
    - `NODE_VERSION` = `22`
-7. Deploy and verify `https://<your-render-service>.onrender.com/api/health` returns `{"status":"ok"}`.
+6. Deploy and verify `https://<your-render-service>.onrender.com/api/health` returns `{"status":"ok"}`.
 
 ### 3. Deploy the client on Vercel
 
@@ -75,13 +74,13 @@ Commit and push your changes to the GitHub repository/branch you want to deploy.
 4. Add the environment variable `VITE_API_URL` = `https://<your-render-service>.onrender.com/api`.
 5. Deploy. Copy the final Vercel site URL into Render's `CLIENT_ORIGIN` setting and redeploy the API.
 
-After deploying, register a test account and create an application to verify end-to-end writes. The SQLite file lives on the Render disk, not in GitHub or VS Code. Back up that persistent file regularly.
+After deploying, register a test account and create an application to verify end-to-end writes. Data is stored in Neon; do not commit the connection string to GitHub.
 
 ### GitHub and deployment updates
 
-For future changes, commit and push to the connected GitHub branch. Vercel and Render can automatically redeploy when that branch receives a push. Keep `.env` files, JWT secrets, and SQLite database files out of GitHub.
+For future changes, commit and push to the connected GitHub branch. Vercel and Render can automatically redeploy when that branch receives a push. Keep `.env` files, database connection strings, and JWT secrets out of GitHub.
 
-SQLite starts as a new, empty database: existing MongoDB data is not migrated automatically. Export and migrate any MongoDB records you want to keep before switching production users to this version.
+The PostgreSQL schema is created automatically when the API starts. This version does not automatically migrate records from the earlier MongoDB or SQLite versions.
 
 ## API
 

@@ -1,70 +1,74 @@
-import Database from 'better-sqlite3';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import pg from 'pg';
 
-const serverDirectory = fileURLToPath(new URL('../', import.meta.url));
-let database;
+const { Pool } = pg;
+let pool;
 
-const connectDB = () => {
-  const databasePath = process.env.DB_PATH || path.join(serverDirectory, 'data', 'placement.sqlite');
-
-  if (databasePath !== ':memory:') {
-    fs.mkdirSync(path.dirname(databasePath), { recursive: true });
-  }
-
-  database = new Database(databasePath);
-  database.pragma('foreign_keys = ON');
-  database.pragma('journal_mode = WAL');
-  database.exec(`
+const initializeSchema = async () => {
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id BIGSERIAL PRIMARY KEY,
       name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
-      coding_belts TEXT NOT NULL DEFAULT '{"java":0,"cpp":0,"python":0,"javascript":0}',
-      communication_score REAL NOT NULL DEFAULT 0,
-      attendance TEXT NOT NULL DEFAULT '{"quarterly":0,"yearly":0}',
-      viva_score REAL NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      coding_belts JSONB NOT NULL DEFAULT '{"java":0,"cpp":0,"python":0,"javascript":0}'::jsonb,
+      communication_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+      attendance JSONB NOT NULL DEFAULT '{"quarterly":0,"yearly":0}'::jsonb,
+      viva_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS companies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       role TEXT NOT NULL,
-      applied_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      applied_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       status TEXT NOT NULL DEFAULT 'Applied'
         CHECK (status IN ('Applied', 'Online Assessment', 'Technical Interview', 'HR Interview', 'Selected', 'Rejected')),
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
-    CREATE INDEX IF NOT EXISTS companies_user_date_idx ON companies(user_id, applied_date);
+    CREATE INDEX IF NOT EXISTS companies_user_date_idx ON companies(user_id, applied_date DESC);
 
     CREATE TABLE IF NOT EXISTS resources (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id BIGSERIAL PRIMARY KEY,
       title TEXT NOT NULL,
       category TEXT NOT NULL DEFAULT 'DSA'
         CHECK (category IN ('DSA', 'Aptitude', 'Resume', 'Interview Experience', 'Core Subjects')),
       link TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+};
 
-  console.log(`SQLite connected: ${databasePath}`);
-  return database;
+const connectDB = async () => {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is required to connect to PostgreSQL.');
+  }
+
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : undefined,
+  });
+  await pool.query('SELECT 1');
+  await initializeSchema();
+  console.log('PostgreSQL connected');
+  return pool;
 };
 
 const getDB = () => {
-  if (!database) {
+  if (!pool) {
     throw new Error('Database is not initialized. Call connectDB() before handling requests.');
   }
-  return database;
+  return pool;
 };
 
-export { getDB };
+const setPoolForTests = (testPool) => {
+  pool = testPool;
+};
+
+export { getDB, initializeSchema, setPoolForTests };
 export default connectDB;
