@@ -32,7 +32,7 @@ router.post(
     const { name, email, password } = req.body;
 
     try {
-      let user = await User.findOne({ email });
+      let user = User.findByEmail(email);
 
       if (user) {
         return res.status(400).json({ errors: [{ msg: 'User already exists' }] });
@@ -41,13 +41,11 @@ router.post(
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(password, salt);
 
-      user = new User({
+      user = User.create({
         name,
-        email,
+        email: email.trim(),
         passwordHash,
       });
-
-      await user.save();
 
       res.status(201).json({
         _id: user._id,
@@ -56,6 +54,9 @@ router.post(
         token: generateToken(user._id),
       });
     } catch (err) {
+      if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        return res.status(400).json({ errors: [{ msg: 'User already exists' }] });
+      }
       console.error(err.message);
       res.status(500).send('Server error');
     }
@@ -80,13 +81,13 @@ router.post(
     const { email, password } = req.body;
 
     try {
-      const user = await User.findOne({ email });
+      const user = User.findByEmail(email);
 
       if (!user) {
         return res.status(400).json({ errors: [{ msg: 'Invalid Credentials' }] });
       }
 
-      const isMatch = await user.matchPassword(password);
+      const isMatch = await User.matchPassword(user, password);
 
       if (!isMatch) {
         return res.status(400).json({ errors: [{ msg: 'Invalid Credentials' }] });

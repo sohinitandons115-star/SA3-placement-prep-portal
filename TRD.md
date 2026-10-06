@@ -10,15 +10,15 @@
 ## 1. Architecture Overview
 
 ```
-┌──────────────────┐     HTTPS / REST      ┌──────────────────┐     Mongoose ODM     ┌─────────────┐
-│  React (Vite)    │ ───────────────────▶  │  Express.js API  │ ──────────────────▶  │  MongoDB    │
-│  Frontend (SPA)  │ ◀───────────────────  │  (Node.js)       │ ◀──────────────────  │  Database   │
-└──────────────────┘    JSON + JWT          └──────────────────┘                      └─────────────┘
+┌──────────────────┐     HTTPS / REST      ┌──────────────────┐   better-sqlite3    ┌─────────────┐
+│  React (Vite)    │ ───────────────────▶  │  Express.js API  │ ─────────────────▶ │   SQLite    │
+│  Frontend (SPA)  │ ◀───────────────────  │  (Node.js)       │ ◀───────────────── │  DB file    │
+└──────────────────┘    JSON + JWT          └──────────────────┘                     └─────────────┘
 ```
 
 - **Frontend** — React SPA (Vite), Tailwind CSS, Axios, client-side routing
-- **Backend** — Express.js REST API, JWT stateless auth, Mongoose ODM
-- **Database** — MongoDB with three collections: `users`, `companies`, `resources`
+- **Backend** — Express.js REST API, JWT stateless auth, SQLite access through `better-sqlite3`
+- **Database** — SQLite file with `users`, `companies`, and `resources` tables
 
 ### Architectural Decisions
 
@@ -26,6 +26,8 @@
 |---|---|
 | REST over GraphQL | Simpler and faster to implement; higher team familiarity |
 | JWT over session cookies | Stateless auth — no server-side session store required |
+| SQLite over MongoDB | Embedded database with no network connection or database service required for local development |
+| Persistent disk for deployed SQLite | The database file must be stored on durable storage; serverless temporary filesystems are not suitable |
 | Client-side search/filter | Dataset per user is small; avoids extra API round-trips |
 | Context API over Redux | Sufficient for auth/theme state; avoids Redux boilerplate |
 | No file storage (S3) | Resume upload is a bonus feature; adds infra overhead not justified by time |
@@ -42,8 +44,8 @@
 | Routing | React Router v6 | Standard client-side routing with protected route support |
 | HTTP client | Axios | Interceptor support for automatic JWT attachment |
 | Backend | Express.js | Minimal, well-understood REST framework |
-| Database | MongoDB | Flexible schema, fast to prototype |
-| ODM | Mongoose | Schema validation, pre-save hooks (e.g., password hashing) |
+| Database | SQLite | Embedded, transactional relational database stored in a local file |
+| SQLite driver | `better-sqlite3` | Synchronous prepared statements and local SQLite database access |
 | Auth | `jsonwebtoken` | Stateless, no session store required |
 | Password hashing | `bcryptjs` | Industry-standard one-way hashing |
 | Input validation | `express-validator` | Declarative request validation |
@@ -65,11 +67,12 @@ SA3-placement-prep-portal/
 │   │   └── hooks/          # Custom hooks
 │   └── .env                # VITE_API_URL
 ├── server/                 # Express backend
-│   ├── models/             # User, Company, Resource schemas
+│   ├── models/             # SQLite-backed User, Company, Resource access
 │   ├── routes/             # auth, company, resource route files
 │   ├── controllers/        # Business logic per route group
 │   ├── middleware/         # Auth middleware, error handling
-│   └── config/             # db.js (MongoDB connection)
+│   ├── config/             # db.js (SQLite connection and schema initialization)
+│   └── test/               # Database and API integration tests
 ├── README.md
 ├── PRD.md
 └── TRD.md
@@ -83,33 +86,37 @@ SA3-placement-prep-portal/
 
 | Field | Type | Constraints |
 |---|---|---|
-| `_id` | ObjectId | Auto-generated |
+| `id` (`_id` in API) | INTEGER | Primary key, auto-increment |
 | `name` | String | Required |
-| `email` | String | Required, unique, lowercase |
-| `passwordHash` | String | Required (bcrypt hash — never plain text) |
-| `createdAt` | Date | Auto (timestamps) |
+| `email` | TEXT | Required, unique, case-insensitive |
+| `password_hash` | TEXT | Required (bcrypt hash — never plain text) |
+| `coding_belts` | TEXT (JSON) | Language belt scores |
+| `communication_score` | REAL | Defaults to `0` |
+| `attendance` | TEXT (JSON) | Quarterly and yearly percentages |
+| `viva_score` | REAL | Defaults to `0` |
+| `created_at` / `updated_at` | TEXT | Auto timestamps |
 
 ### 4.2 `Company`
 
 | Field | Type | Constraints |
 |---|---|---|
-| `_id` | ObjectId | Auto-generated |
-| `userId` | ObjectId → `User` | Required — enforces per-user ownership |
-| `name` | String | Required |
-| `role` | String | Required |
-| `applicationDate` | Date | Required |
-| `status` | String (enum) | `Applied`, `Online Assessment`, `Technical Interview`, `HR Interview`, `Selected`, `Rejected` |
-| `createdAt` / `updatedAt` | Date | Auto (timestamps) |
+| `id` (`_id` in API) | INTEGER | Primary key, auto-increment |
+| `user_id` (`userId` in API) | INTEGER → `users.id` | Required foreign key; cascades on user deletion |
+| `name` | TEXT | Required |
+| `role` | TEXT | Required |
+| `applied_date` (`appliedDate` in API) | TEXT | Required ISO date |
+| `status` | TEXT (enum) | `Applied`, `Online Assessment`, `Technical Interview`, `HR Interview`, `Selected`, `Rejected` |
+| `created_at` / `updated_at` | TEXT | Auto timestamps |
 
 ### 4.3 `Resource`
 
 | Field | Type | Constraints |
 |---|---|---|
-| `_id` | ObjectId | Auto-generated |
-| `title` | String | Required |
-| `category` | String (enum) | `DSA`, `Aptitude`, `Resume`, `Interview Experience`, `Core Subjects` |
-| `link` | String | Required, valid URL |
-| `createdAt` | Date | Auto (timestamps) |
+| `id` (`_id` in API) | INTEGER | Primary key, auto-increment |
+| `title` | TEXT | Required |
+| `category` | TEXT (enum) | `DSA`, `Aptitude`, `Resume`, `Interview Experience`, `Core Subjects` |
+| `link` | TEXT | Required |
+| `created_at` / `updated_at` | TEXT | Auto timestamps |
 
 ---
 
@@ -190,9 +197,9 @@ Base URL: `/api`
 | Variable | Location | Purpose |
 |---|---|---|
 | `PORT` | server | Express server port |
-| `MONGO_URI` | server | MongoDB connection string |
+| `DB_PATH` | server | SQLite database file path (defaults to `server/data/placement.sqlite`) |
 | `JWT_SECRET` | server | JWT signing secret |
-| `JWT_EXPIRE` | server | Token expiry duration |
+| `CLIENT_ORIGIN` | server | Allowed frontend origin(s), comma-separated |
 | `VITE_API_URL` | client | Backend API base URL |
 
 ---

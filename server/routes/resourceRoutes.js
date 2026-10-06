@@ -10,7 +10,7 @@ const router = express.Router();
 // @access  Public or Private (Let's make it private for consistency with dashboard)
 router.get('/', protect, async (req, res) => {
   try {
-    const resources = await Resource.find().sort({ createdAt: -1 });
+    const resources = Resource.findAll();
     res.json(resources);
   } catch (err) {
     console.error(err.message);
@@ -39,13 +39,12 @@ router.post(
     const { title, category, link } = req.body;
 
     try {
-      const newResource = new Resource({
+      const resource = Resource.create({
         title,
         category,
         link,
       });
 
-      const resource = await newResource.save();
       res.json(resource);
     } catch (err) {
       console.error(err.message);
@@ -59,11 +58,11 @@ router.post(
 // @access  Private
 router.delete('/:id', protect, async (req, res) => {
   try {
-    let resource = await Resource.findById(req.params.id);
+    const resource = Resource.findById(req.params.id);
 
     if (!resource) return res.status(404).json({ msg: 'Resource not found' });
 
-    await Resource.findByIdAndDelete(req.params.id);
+    Resource.delete(req.params.id);
 
     res.json({ msg: 'Resource removed' });
   } catch (err) {

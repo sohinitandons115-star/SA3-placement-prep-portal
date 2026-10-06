@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-The Placement Prep Portal is a MERN-stack web application that gives students a single authenticated workspace to manage their entire campus placement journey — applications, interview stages, and preparation resources — replacing fragmented spreadsheets and notes.
+The Placement Prep Portal is a web application that gives students a single authenticated workspace to manage their entire campus placement journey — applications, interview stages, and preparation resources — replacing fragmented spreadsheets and notes.
 
 Scoped for a **2-hour hackathon build**: MVP-first, with bounded bonus features.
 

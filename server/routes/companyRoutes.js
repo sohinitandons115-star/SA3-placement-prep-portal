@@ -10,7 +10,7 @@ const router = express.Router();
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const companies = await Company.find({ userId: req.user._id }).sort({ appliedDate: -1 });
+    const companies = Company.findByUserId(req.user._id);
     res.json(companies);
   } catch (err) {
     console.error(err.message);
@@ -39,15 +39,14 @@ router.post(
     const { name, role, status, appliedDate } = req.body;
 
     try {
-      const newCompany = new Company({
+      const company = Company.create({
         name,
         role,
         status,
-        appliedDate: appliedDate || Date.now(),
+        appliedDate: appliedDate || new Date(),
         userId: req.user._id,
       });
 
-      const company = await newCompany.save();
       res.json(company);
     } catch (err) {
       console.error(err.message);
@@ -69,7 +68,7 @@ router.put('/:id', protect, async (req, res) => {
   if (appliedDate) companyFields.appliedDate = appliedDate;
 
   try {
-    let company = await Company.findById(req.params.id);
+    let company = Company.findById(req.params.id);
 
     if (!company) return res.status(404).json({ msg: 'Company not found' });
 
@@ -78,11 +77,7 @@ router.put('/:id', protect, async (req, res) => {
       return res.status(401).json({ msg: 'Not authorized' });
     }
 
-    company = await Company.findByIdAndUpdate(
-      req.params.id,
-      { $set: companyFields },
-      { new: true }
-    );
+    company = Company.update(req.params.id, companyFields);
 
     res.json(company);
   } catch (err) {
@@ -96,7 +91,7 @@ router.put('/:id', protect, async (req, res) => {
 // @access  Private
 router.delete('/:id', protect, async (req, res) => {
   try {
-    let company = await Company.findById(req.params.id);
+    const company = Company.findById(req.params.id);
 
     if (!company) return res.status(404).json({ msg: 'Company not found' });
 
@@ -105,7 +100,7 @@ router.delete('/:id', protect, async (req, res) => {
       return res.status(401).json({ msg: 'Not authorized' });
     }
 
-    await Company.findByIdAndRemove(req.params.id);
+    Company.delete(req.params.id);
 
     res.json({ msg: 'Company removed' });
   } catch (err) {
